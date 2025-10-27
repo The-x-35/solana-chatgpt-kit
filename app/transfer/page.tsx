@@ -6,6 +6,7 @@ import { useMaxHeight } from "@/app/hooks/use-max-height";
 import { useOpenAIGlobal } from "@/app/hooks/use-openai-global";
 import { externalWallet } from "@/lib/solana-config";
 import { ensureWalletConnected, getWalletPublicKey, signAndSendTransaction } from "@/lib/wallet-utils";
+import { createX402Client } from "x402-solana/client";
 
 type TransferWidgetProps = {
   toAddress?: string;
@@ -43,35 +44,52 @@ export default function TransferPage() {
     setResult(null);
     try {
       let userPublicKey: string | undefined;
+      let provider;
 
       // If using external wallet, connect and get public key
       if (externalWallet) {
-        const provider = await ensureWalletConnected();
+        provider = await ensureWalletConnected();
         const publicKey = getWalletPublicKey(provider);
         if (!publicKey) {
           throw new Error("Failed to get wallet public key");
         }
         userPublicKey = publicKey;
         setWalletAddress(publicKey);
-      }
 
-      const res = await fetch("/api/transfer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toAddress, amount, userPublicKey }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to send SOL");
+        // Create x402 client with connected wallet
+        const x402Client = createX402Client({
+          wallet: provider as any, // Provider matches WalletAdapter interface
+          network: "solana", // mainnet
+          rpcUrl: "https://api.mainnet-beta.solana.com",
+        });
 
-      // If external wallet mode, sign and send the transaction
-      if (externalWallet && data.transferTransaction) {
-        const provider = await ensureWalletConnected();
-        const signature = await signAndSendTransaction(provider, data.transferTransaction);
-        
-        const explorerUrl = `https://solscan.io/tx/${signature}`;
-        setResult({ signature, explorerUrl });
+        // Use x402 client fetch - automatically handles 402 payment
+        const res = await x402Client.fetch("/api/transfer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toAddress, amount, userPublicKey }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Failed to send SOL");
+
+        // If external wallet mode, sign and send the transaction
+        if (data.transferTransaction) {
+          const signature = await signAndSendTransaction(provider, data.transferTransaction);
+          const explorerUrl = `https://solscan.io/tx/${signature}`;
+          setResult({ signature, explorerUrl });
+        } else {
+          setResult({ signature: data.signature, explorerUrl: data.explorerUrl });
+        }
       } else {
-        // Server wallet mode - transaction already executed
+        // Server wallet mode - regular fetch, no x402
+        const res = await fetch("/api/transfer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ toAddress, amount }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "Failed to send SOL");
+
         setResult({ signature: data.signature, explorerUrl: data.explorerUrl });
       }
     } catch (e) {
@@ -80,6 +98,7 @@ export default function TransferPage() {
       setIsSending(false);
     }
   };
+
 
   return (
     <div

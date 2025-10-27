@@ -29,6 +29,7 @@ This is the **first-ever ChatGPT application** that combines:
 - Send SOL to any wallet address
 - **SNS Domain Support** (.sol domains via Bonfida)
 - **AllDomains Support** (.superteam, .solana, and other TLDs)
+- **x402 Payment Protocol** (External Wallet Mode): Optional $0.001 USDC API fee from user's wallet
 - Explicit confirmation before sending
 - Transaction tracking and verification
 
@@ -74,6 +75,13 @@ Create a `.env.local` file:
 ```bash
 # Required: Your Solana wallet private key (base58 encoded)
 SOLANA_PRIVATE_KEY=your_base58_private_key_here
+
+# Required for external wallet mode: Treasury address for x402 payment fees
+# (Only needed if externalWallet = true in lib/solana-config.ts)
+X402_TREASURY_ADDRESS=your_treasury_wallet_address_here
+
+# Optional: x402 Facilitator URL (defaults to PayAI facilitator)
+FACILITATOR_URL=https://facilitator.payai.network
 
 # Optional: Custom RPC endpoint (defaults to public Solana mainnet)
 SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
@@ -213,6 +221,43 @@ Smart address resolution supporting:
 - **UI Components**: Radix UI, Lucide Icons
 
 ## 🔧 Configuration
+
+### x402 Payment Protocol (External Wallet Mode Only)
+
+When using external wallet mode (`externalWallet = true` in `lib/solana-config.ts`), this application implements the [x402 payment protocol](https://github.com/payainetwork/x402-solana) for API monetization. Each transfer requires a $0.001 USDC payment fee from the user's wallet before execution.
+
+**How it works:**
+1. User initiates transfer with browser wallet connected
+2. Client calls `/api/transfer` → Server returns 402 Payment Required
+3. **Client automatically creates payment transaction** ($0.001 USDC to treasury)
+4. **User signs payment with their wallet** (first transaction - USDC payment)
+5. Client retries request with `X-PAYMENT` header containing proof
+6. Server verifies payment with PayAI facilitator
+7. Server returns unsigned transfer transaction
+8. **User signs transfer with their wallet** (second transaction - SOL transfer)
+9. Transfer executes successfully
+
+**Configuration:**
+- Set `externalWallet = true` in `lib/solana-config.ts` to enable
+- Set `X402_TREASURY_ADDRESS` env variable to your treasury wallet address
+- Set `FACILITATOR_URL` env variable (optional, defaults to PayAI facilitator)
+- Fees: $0.001 USDC paid from user's wallet (not server wallet)
+- Users must have USDC in their wallet to pay the API fee
+- Payment verification handled by PayAI facilitator network
+
+**For developers:**
+- Client-side payment: `x402-solana/client` package (see `app/transfer/page.tsx`)
+- Server-side verification: `x402-solana/server` package (see `lib/x402-config.ts`)
+- API route integration: `app/api/transfer/route.ts`
+- Payment token: USDC (mainnet: `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`)
+
+**Important Notes:**
+- When `externalWallet = false` (server wallet mode), x402 is **disabled** and transfers execute directly
+- Users need **USDC tokens** in their wallet to pay the $0.001 API fee
+- The fee is separate from the SOL being transferred
+
+**Credits:**
+- x402 integration with help from [@pranav-singhal](https://github.com/pranav-singhal)
 
 ### Adding More Tokens
 
@@ -396,6 +441,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+## 🙏 Acknowledgments
+
+Special thanks to:
+- [@pranav-singhal](https://github.com/pranav-singhal) - For help with x402 payment protocol integration
 
 ## 📄 License
 

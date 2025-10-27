@@ -4,7 +4,7 @@ import bs58 from "bs58";
 // External wallet configuration
 // Set to true to use external wallet (Phantom/injected wallet) for signing
 // Set to false to use server-side private key for signing
-export const externalWallet = false;
+export const externalWallet = true;
 
 // Token addresses
 export const TOKENS = {
